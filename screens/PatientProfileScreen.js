@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, ScrollView,
 } from 'react-native';
-import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
 import { auth, db } from './firebaseConfig';
 import { useTranslation } from 'react-i18next';
 import { useLanguage } from './LanguageContext';
@@ -18,27 +18,79 @@ export default function PatientProfileScreen({ navigation }) {
   const [relativeName, setRelativeName] = useState('');
   const [relativeRelation, setRelativeRelation] = useState('');
   const [relativeAge, setRelativeAge] = useState('');
+  const [recentAppointments, setRecentAppointments] = useState([]);
+  const [loadingAppointments, setLoadingAppointments] = useState(false);
 
   useEffect(() => {
-    const loadProfile = async () => {
-      try {
-        const snap = await getDoc(doc(db, 'users', auth.currentUser.uid));
-        if (snap.exists()) {
-          const data = snap.data();
-          setFullName(data.fullName || '');
-          setAge(data.age ? String(data.age) : '');
-          setRelativeName(data.relativeProfile?.name || '');
-          setRelativeRelation(data.relativeProfile?.relation || '');
-          setRelativeAge(data.relativeProfile?.age ? String(data.relativeProfile.age) : '');
-        }
-      } catch (e) {
-        Alert.alert(i18n.t('screens:patientProfile.loadErrorTitle'), i18n.t('screens:patientProfile.loadErrorMsg'));
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadProfile();
+    loadProfileAndAppointments();
   }, []);
+
+  const loadProfileAndAppointments = async () => {
+    try {
+      // Load patient profile
+      const snap = await getDoc(doc(db, 'users', auth.currentUser.uid));
+      if (snap.exists()) {
+        const data = snap.data();
+        setFullName(data.fullName || '');
+        setAge(data.age ? String(data.age) : '');
+        setRelativeName(data.relativeProfile?.name || '');
+        setRelativeRelation(data.relativeProfile?.relation || '');
+        setRelativeAge(data.relativeProfile?.age ? String(data.relativeProfile.age) : '');
+      }
+
+      // Load recent appointments (last 7 days)
+      setLoadingAppointments(true);
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+      const appointmentsRef = collection(db, 'appointments');
+      const q = query(
+        appointmentsRef,
+        where('patientId', '==', auth.currentUser.uid),
+        where('createdAt', '>=', sevenDaysAgo),
+        orderBy('createdAt', 'desc'),
+        limit(5)
+      );
+
+      const querySnapshot = await getDocs(q);
+      const appointments = [];
+
+      for (const docSnap of querySnapshot.docs) {
+        const apptData = docSnap.data();
+        
+        // Fetch doctor details
+        let doctorName = 'Unknown Doctor';
+        let cabinetName = '';
+        try {
+          const doctorSnap = await getDoc(doc(db, 'users', apptData.doctorId));
+          if (doctorSnap.exists()) {
+            doctorName = doctorSnap.data().fullName || 'Unknown Doctor';
+            cabinetName = doctorSnap.data().cabinetName || '';
+          }
+        } catch (e) {
+          console.log('Error fetching doctor:', e);
+        }
+
+        appointments.push({
+          id: docSnap.id,
+          doctorName,
+          cabinetName,
+          date: apptData.date,
+          time: apptData.time,
+          status: apptData.status,
+          createdAt: apptData.createdAt?.toDate?.() || new Date(apptData.createdAt),
+        });
+      }
+
+      setRecentAppointments(appointments);
+    } catch (e) {
+      console.log('Error loading data:', e);
+      Alert.alert(i18n.t('screens:patientProfile.loadErrorTitle'), i18n.t('screens:patientProfile.loadErrorMsg'));
+    } finally {
+      setLoading(false);
+      setLoadingAppointments(false);
+    }
+  };
 
   const saveProfile = async () => {
     const parsedAge = parseInt(age, 10);
@@ -76,6 +128,27 @@ export default function PatientProfileScreen({ navigation }) {
     }
   };
 
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'confirmed':
+        return '#10b981';
+      case 'pending':
+        return '#f59e0b';
+      case 'completed':
+        return '#3b82f6';
+      case 'cancelled':
+        return '#ef4444';
+      default:
+        return '#6b7280';
+    }
+  };
+
+  const formatDate = (date) => {
+    if (!date) return '';
+    const d = date instanceof Date ? date : new Date(date);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
   if (loading) {
     return (
       <View style={styles.center}>
@@ -107,6 +180,70 @@ export default function PatientProfileScreen({ navigation }) {
       <TouchableOpacity style={styles.saveBtn} onPress={saveProfile} disabled={saving}>
         {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>{t('patientProfile.saveBtn')}</Text>}
       </TouchableOpacity>
+
+      {/* Recent Appointments Section */}
+      <Text style={[styles.section, { marginTop: 30 }]}>Recent Appointments (Last 7 Days)</Text>
+
+      {loadingAppointments ? (
+        <ActivityIndicator size="small" color="#16a34a" style={{ marginTop: 10 }} />
+      ) : recentAppointments.length === 0 ? (
+        <Text style={styles.noAppointmentsText}>No appointments in the last 7 days</Text>
+      ) : (
+        <View style={styles.appointmentsList}>
+          {recentAppointments.map((appointment) => (
+            <View key={appointment.id} style={styles.appointmentCard}>
+              <View style={styles.appointmentHeader}>
+                <View style={styles.appointmentInfo}>
+                  <Text style={styles.doctorName}>{appointment.doctorName}</Text>
+                  {appointment.cabinetName && (
+                    <Text style={styles.cabinetName}>{appointment.cabinetName}</Text>
+                  )}
+                </View>
+                <View
+                  style={[
+                    styles.statusBadge,
+                    { backgroundColor: getStatusColor(appointment.status) },
+                  ]}
+                >
+                  <Text style={styles.statusText}>{appointment.status}</Text>
+                </View>
+              </View>
+              <View style={styles.appointmentDetails}>
+                <Text style={styles.appointmentDate}>
+                  📅 {formatDate(appointment.createdAt)} {appointment.time || 'TBA'}
+                </Text>
+                <Text style={styles.appointmentDate}>
+                  ⏰ Appointment: {appointment.date} {appointment.time}
+                </Text>
+              </View>
+              <View style={styles.appointmentActions}>
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.rescheduleBtn]}
+                  onPress={() =>
+                    navigation.navigate('Appointments', {
+                      appointmentId: appointment.id,
+                      action: 'reschedule',
+                    })
+                  }
+                >
+                  <Text style={styles.actionBtnText}>Reschedule</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.actionBtn, styles.cancelBtn]}
+                  onPress={() =>
+                    navigation.navigate('Appointments', {
+                      appointmentId: appointment.id,
+                      action: 'cancel',
+                    })
+                  }
+                >
+                  <Text style={[styles.actionBtnText, { color: '#ef4444' }]}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
     </ScrollView>
   );
 }
@@ -134,4 +271,93 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   saveText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+
+  // Recent Appointments Styles
+  noAppointmentsText: {
+    fontSize: 14,
+    color: '#9ca3af',
+    textAlign: 'center',
+    marginTop: 10,
+    marginBottom: 20,
+  },
+  appointmentsList: {
+    marginTop: 10,
+  },
+  appointmentCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#16a34a',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  appointmentHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 10,
+  },
+  appointmentInfo: {
+    flex: 1,
+  },
+  doctorName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  cabinetName: {
+    fontSize: 13,
+    color: '#6b7280',
+    marginTop: 4,
+  },
+  statusBadge: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 6,
+    marginLeft: 10,
+  },
+  statusText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'capitalize',
+  },
+  appointmentDetails: {
+    backgroundColor: '#f3f4f6',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 12,
+  },
+  appointmentDate: {
+    fontSize: 13,
+    color: '#374151',
+    marginBottom: 4,
+  },
+  appointmentActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  actionBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  rescheduleBtn: {
+    backgroundColor: '#16a34a',
+  },
+  cancelBtn: {
+    backgroundColor: '#fee2e2',
+  },
+  actionBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#fff',
+  },
 });
