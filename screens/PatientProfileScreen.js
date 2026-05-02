@@ -15,6 +15,8 @@ export default function PatientProfileScreen({ navigation }) {
   const [saving, setSaving] = useState(false);
   const [fullName, setFullName] = useState('');
   const [age, setAge] = useState('');
+  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
   const [relativeName, setRelativeName] = useState('');
   const [relativeRelation, setRelativeRelation] = useState('');
   const [relativeAge, setRelativeAge] = useState('');
@@ -33,6 +35,8 @@ export default function PatientProfileScreen({ navigation }) {
         const data = snap.data();
         setFullName(data.fullName || '');
         setAge(data.age ? String(data.age) : '');
+        setPhone(data.phone || '');
+        setEmail(data.email || '');
         setRelativeName(data.relativeProfile?.name || '');
         setRelativeRelation(data.relativeProfile?.relation || '');
         setRelativeAge(data.relativeProfile?.age ? String(data.relativeProfile.age) : '');
@@ -43,7 +47,7 @@ export default function PatientProfileScreen({ navigation }) {
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-      const appointmentsRef = collection(db, 'appointments');
+      const appointmentsRef = collection(db, 'reservations');
       const q = query(
         appointmentsRef,
         where('patientId', '==', auth.currentUser.uid),
@@ -112,6 +116,7 @@ export default function PatientProfileScreen({ navigation }) {
       await updateDoc(doc(db, 'users', auth.currentUser.uid), {
         fullName: fullName.trim(),
         age: parsedAge,
+        phone: phone.trim(),
         relativeProfile: {
           name: relativeName.trim(),
           relation: relativeRelation.trim(),
@@ -159,30 +164,59 @@ export default function PatientProfileScreen({ navigation }) {
 
   return (
     <ScrollView style={[styles.container, { direction: isRTL ? 'rtl' : 'ltr' }]} contentContainerStyle={styles.content}>
+      {/* Profile Header */}
+      <View style={styles.profileHeader}>
+        <View style={styles.avatarPlaceholder}>
+          <Text style={styles.avatarText}>👤</Text>
+        </View>
+        <View style={styles.profileHeaderText}>
+          <Text style={styles.profileName}>{fullName || 'Patient'}</Text>
+          <Text style={styles.profileEmail}>{email}</Text>
+        </View>
+      </View>
+
+      {/* Personal Information */}
       <Text style={styles.title}>{t('patientProfile.title')}</Text>
 
-      <Text style={styles.label}>{t('patientProfile.nameLabel')}</Text>
-      <TextInput style={styles.input} value={fullName} onChangeText={setFullName} />
+      <Text style={styles.label}>👤 {t('patientProfile.nameLabel')}</Text>
+      <TextInput style={styles.input} value={fullName} onChangeText={setFullName} placeholder="Enter your full name" />
 
-      <Text style={styles.label}>{t('patientProfile.ageLabel')}</Text>
-      <TextInput style={styles.input} value={age} onChangeText={setAge} keyboardType="number-pad" />
+      <Text style={styles.label}>🎂 {t('patientProfile.ageLabel')}</Text>
+      <TextInput style={styles.input} value={age} onChangeText={setAge} keyboardType="number-pad" placeholder="Enter your age" />
 
+      <Text style={styles.label}>📱 Phone Number</Text>
+      <TextInput 
+        style={styles.input} 
+        value={phone} 
+        onChangeText={setPhone} 
+        keyboardType="phone-pad" 
+        placeholder="05XX XXX XXX"
+      />
+
+      <Text style={styles.label}>📧 Email</Text>
+      <TextInput 
+        style={[styles.input, styles.disabledInput]} 
+        value={email} 
+        editable={false}
+      />
+
+      {/* Relative Information */}
       <Text style={styles.section}>{t('patientProfile.relativeSection')}</Text>
-      <Text style={styles.label}>{t('patientProfile.relativeNameLabel')}</Text>
-      <TextInput style={styles.input} value={relativeName} onChangeText={setRelativeName} />
+      <Text style={styles.label}>👨‍👩‍👧 {t('patientProfile.relativeNameLabel')}</Text>
+      <TextInput style={styles.input} value={relativeName} onChangeText={setRelativeName} placeholder="e.g. Mother / Father name" />
 
-      <Text style={styles.label}>{t('patientProfile.relativeRelationLabel')}</Text>
-      <TextInput style={styles.input} value={relativeRelation} onChangeText={setRelativeRelation} />
+      <Text style={styles.label}>🔗 {t('patientProfile.relativeRelationLabel')}</Text>
+      <TextInput style={styles.input} value={relativeRelation} onChangeText={setRelativeRelation} placeholder="e.g. Mother, Father, Child" />
 
-      <Text style={styles.label}>{t('patientProfile.relativeAgeLabel')}</Text>
-      <TextInput style={styles.input} value={relativeAge} onChangeText={setRelativeAge} keyboardType="number-pad" />
+      <Text style={styles.label}>🎂 {t('patientProfile.relativeAgeLabel')}</Text>
+      <TextInput style={styles.input} value={relativeAge} onChangeText={setRelativeAge} keyboardType="number-pad" placeholder="Enter relative age" />
 
       <TouchableOpacity style={styles.saveBtn} onPress={saveProfile} disabled={saving}>
         {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveText}>{t('patientProfile.saveBtn')}</Text>}
       </TouchableOpacity>
 
       {/* Recent Appointments Section */}
-      <Text style={[styles.section, { marginTop: 30 }]}>Recent Appointments (Last 7 Days)</Text>
+      <Text style={[styles.section, { marginTop: 30 }]}>📅 Recent Appointments (Last 7 Days)</Text>
 
       {loadingAppointments ? (
         <ActivityIndicator size="small" color="#16a34a" style={{ marginTop: 10 }} />
@@ -194,7 +228,7 @@ export default function PatientProfileScreen({ navigation }) {
             <View key={appointment.id} style={styles.appointmentCard}>
               <View style={styles.appointmentHeader}>
                 <View style={styles.appointmentInfo}>
-                  <Text style={styles.doctorName}>{appointment.doctorName}</Text>
+                  <Text style={styles.doctorName}>👨‍⚕️ {appointment.doctorName}</Text>
                   {appointment.cabinetName && (
                     <Text style={styles.cabinetName}>{appointment.cabinetName}</Text>
                   )}
@@ -210,10 +244,10 @@ export default function PatientProfileScreen({ navigation }) {
               </View>
               <View style={styles.appointmentDetails}>
                 <Text style={styles.appointmentDate}>
-                  📅 {formatDate(appointment.createdAt)} {appointment.time || 'TBA'}
+                  📅 {formatDate(appointment.createdAt)}
                 </Text>
                 <Text style={styles.appointmentDate}>
-                  ⏰ Appointment: {appointment.date} {appointment.time}
+                  ⏰ {appointment.date} {appointment.time}
                 </Text>
               </View>
               <View style={styles.appointmentActions}>
@@ -252,6 +286,47 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
   content: { padding: 20, paddingBottom: 30 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+
+  // Profile Header
+  profileHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  avatarPlaceholder: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#e0f2fe',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 15,
+  },
+  avatarText: {
+    fontSize: 32,
+  },
+  profileHeaderText: {
+    flex: 1,
+  },
+  profileName: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  profileEmail: {
+    fontSize: 13,
+    color: '#6b7280',
+    marginTop: 4,
+  },
+
   title: { fontSize: 24, fontWeight: '800', color: '#111827', marginBottom: 20 },
   section: { fontSize: 16, fontWeight: '700', color: '#16a34a', marginTop: 10, marginBottom: 10 },
   label: { fontSize: 13, fontWeight: '600', color: '#374151', marginBottom: 6, marginTop: 8 },
@@ -262,6 +337,10 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 12,
     fontSize: 15,
+  },
+  disabledInput: {
+    backgroundColor: '#f3f4f6',
+    color: '#6b7280',
   },
   saveBtn: {
     backgroundColor: '#16a34a',
