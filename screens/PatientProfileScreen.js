@@ -3,6 +3,7 @@ import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, ScrollView,
 } from 'react-native';
 import { doc, getDoc, updateDoc, collection, query, where, orderBy, limit, getDocs } from 'firebase/firestore';
+import { signOut } from 'firebase/auth';
 import { auth, db } from './firebaseConfig';
 import { useTranslation } from 'react-i18next';
 import { useLanguage } from './LanguageContext';
@@ -13,6 +14,7 @@ export default function PatientProfileScreen({ navigation }) {
   const { isRTL } = useLanguage();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const [fullName, setFullName] = useState('');
   const [age, setAge] = useState('');
   const [phone, setPhone] = useState('');
@@ -131,6 +133,34 @@ export default function PatientProfileScreen({ navigation }) {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleSignOut = () => {
+    Alert.alert(
+      '🚪 Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        {
+          text: 'Cancel',
+          onPress: () => {},
+          style: 'cancel',
+        },
+        {
+          text: 'Sign Out',
+          onPress: async () => {
+            setSigningOut(true);
+            try {
+              await signOut(auth);
+              navigation.replace('Login');
+            } catch (e) {
+              Alert.alert('Error', 'Failed to sign out: ' + e.message);
+              setSigningOut(false);
+            }
+          },
+          style: 'destructive',
+        },
+      ]
+    );
   };
 
   const getStatusColor = (status) => {
@@ -278,6 +308,19 @@ export default function PatientProfileScreen({ navigation }) {
           ))}
         </View>
       )}
+
+      {/* Sign Out Button */}
+      <TouchableOpacity 
+        style={[styles.signOutBtn, signingOut && styles.buttonDisabled]} 
+        onPress={handleSignOut}
+        disabled={signingOut}
+      >
+        {signingOut ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={styles.signOutText}>🚪 Sign Out</Text>
+        )}
+      </TouchableOpacity>
     </ScrollView>
   );
 }
@@ -438,5 +481,23 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#fff',
+  },
+
+  // Sign Out Button
+  signOutBtn: {
+    backgroundColor: '#ef4444',
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: 30,
+    marginBottom: 20,
+  },
+  signOutText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  buttonDisabled: {
+    opacity: 0.7,
   },
 });
